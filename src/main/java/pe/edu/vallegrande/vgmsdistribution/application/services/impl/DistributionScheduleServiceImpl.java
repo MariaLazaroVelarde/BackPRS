@@ -11,10 +11,8 @@ import pe.edu.vallegrande.vgmsdistribution.domain.enums.Constants;
 import pe.edu.vallegrande.vgmsdistribution.infrastructure.dto.request.DistributionScheduleCreateRequest;
 import pe.edu.vallegrande.vgmsdistribution.infrastructure.dto.response.DistributionScheduleResponse;
 import pe.edu.vallegrande.vgmsdistribution.infrastructure.dto.response.EnrichedDistributionScheduleResponse;
-import pe.edu.vallegrande.vgmsdistribution.infrastructure.dto.response.OrganizationResponse;
 import pe.edu.vallegrande.vgmsdistribution.infrastructure.exception.CustomException;
 import pe.edu.vallegrande.vgmsdistribution.infrastructure.repository.DistributionScheduleRepository;
-import pe.edu.vallegrande.vgmsdistribution.infrastructure.adapter.out.UserAuthClient;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -26,9 +24,6 @@ public class DistributionScheduleServiceImpl implements DistributionScheduleServ
 
     @Autowired
     private DistributionScheduleRepository repository;
-    
-    @Autowired
-    private UserAuthClient userAuthClient; // Inject UserAuthClient
 
     @Override
     public Flux<DistributionSchedule> getAll() {
@@ -88,7 +83,7 @@ public Mono<DistributionScheduleResponse> save(DistributionScheduleCreateRequest
                                     .scheduleCode(saved.getScheduleCode())
                                     .scheduleName(saved.getScheduleName())
                                     .zoneId(saved.getZoneId())
-                                    .streetId(saved.getZoneId()) // Note: This looks like a bug, should be getStreetId()
+                                    .streetId(saved.getStreetId()) // Fixed: was incorrectly using getZoneId()
                                     .daysOfWeek(saved.getDaysOfWeek())
                                     .startTime(saved.getStartTime())
                                     .endTime(saved.getEndTime())
@@ -175,25 +170,25 @@ private Mono<String> generateNextScheduleCode() {
                         HttpStatus.NOT_FOUND.value(),
                         "Schedule not found",
                         "No schedule found with id " + id)))
-                .flatMap(this::toEnrichedResponse);
+                .map(this::toEnrichedResponse);
     }
     
     @Override
     public Flux<EnrichedDistributionScheduleResponse> getAllEnriched() {
         return repository.findAll()
-                .flatMap(this::toEnrichedResponse);
+                .map(this::toEnrichedResponse);
     }
     
     @Override
     public Flux<EnrichedDistributionScheduleResponse> getAllActiveEnriched() {
         return repository.findAllByStatus(Constants.ACTIVE.name())
-                .flatMap(this::toEnrichedResponse);
+                .map(this::toEnrichedResponse);
     }
     
     @Override
     public Flux<EnrichedDistributionScheduleResponse> getAllInactiveEnriched() {
         return repository.findAllByStatus(Constants.INACTIVE.name())
-                .flatMap(this::toEnrichedResponse);
+                .map(this::toEnrichedResponse);
     }
     
     @Override
@@ -224,13 +219,13 @@ private Mono<String> generateNextScheduleCode() {
                                 .build();
 
                         return repository.save(schedule)
-                                .flatMap(this::toEnrichedResponse);
+                                .map(this::toEnrichedResponse);
                     })
             );
     }
     
-    private Mono<EnrichedDistributionScheduleResponse> toEnrichedResponse(DistributionSchedule schedule) {
-        EnrichedDistributionScheduleResponse.EnrichedDistributionScheduleResponseBuilder builder = EnrichedDistributionScheduleResponse.builder()
+    private EnrichedDistributionScheduleResponse toEnrichedResponse(DistributionSchedule schedule) {
+        return EnrichedDistributionScheduleResponse.builder()
                 .id(schedule.getId())
                 .organizationId(schedule.getOrganizationId())
                 .scheduleCode(schedule.getScheduleCode())
@@ -242,34 +237,7 @@ private Mono<String> generateNextScheduleCode() {
                 .endTime(schedule.getEndTime())
                 .durationHours(schedule.getDurationHours())
                 .status(schedule.getStatus())
-                .createdAt(schedule.getCreatedAt());
-        
-        // Fetch organization details if organizationId is present
-        if (schedule.getOrganizationId() != null && !schedule.getOrganizationId().isEmpty()) {
-            return userAuthClient.getOrganizationById(schedule.getOrganizationId())
-                    .map(orgResponse -> {
-                        builder.organization(orgResponse);
-                        return builder.build();
-                    })
-                    .onErrorResume(e -> {
-                        log.warn("Failed to fetch organization details for ID {}: {}", schedule.getOrganizationId(), e.getMessage());
-                        // Return response with basic organization info
-                        OrganizationResponse orgResponse = OrganizationResponse.builder()
-                                .organizationId(schedule.getOrganizationId())
-                                .build();
-                        builder.organization(orgResponse);
-                        return Mono.just(builder.build());
-                    })
-                    .switchIfEmpty(Mono.fromSupplier(() -> {
-                        // Return response with basic organization info if no organization found
-                        OrganizationResponse orgResponse = OrganizationResponse.builder()
-                                .organizationId(schedule.getOrganizationId())
-                                .build();
-                        builder.organization(orgResponse);
-                        return builder.build();
-                    }));
-        }
-        
-        return Mono.just(builder.build());
+                .createdAt(schedule.getCreatedAt())
+                .build();
     }
 }

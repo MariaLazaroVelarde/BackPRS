@@ -4,6 +4,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import pe.edu.vallegrande.vgmsdistribution.infrastructure.service.OrganizationService;
 
 import java.time.Instant;
 import java.time.LocalDate;
@@ -16,7 +17,7 @@ public class EnrichedDistributionProgramResponse {
     
     private String id;
     private String organizationId;
-    private OrganizationResponse organization; // Organization details
+    private OrganizationService.OrganizationResponse organization; // Organization details
     private String programCode;
     private String scheduleId;
     private String routeId;

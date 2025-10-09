@@ -93,6 +93,8 @@ microservices:
                connection: 10000
                read: 10000
                write: 10000
+     organization:
+          url: http://localhost:8081/api/organization
 
 # =============================================================================
 # CONFIGURACIÓN DE ACTUATOR (MONITOREO)

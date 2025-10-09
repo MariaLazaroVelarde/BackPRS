@@ -6,14 +6,11 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 import pe.edu.vallegrande.vgmsdistribution.application.services.*;
-import pe.edu.vallegrande.vgmsdistribution.infrastructure.adapter.out.UserAuthClient;
 import pe.edu.vallegrande.vgmsdistribution.infrastructure.dto.ErrorMessage;
 import pe.edu.vallegrande.vgmsdistribution.infrastructure.dto.ResponseDto;
-import pe.edu.vallegrande.vgmsdistribution.infrastructure.dto.external.msusers.MsUsersUserInfo;
 import reactor.core.publisher.Mono;
 
 import java.time.LocalDateTime;
-import java.util.List;
 import java.util.Map;
 
 @CrossOrigin("*")
@@ -30,9 +27,6 @@ public class DistributionAdminDashboard {
 	private final DistributionScheduleService scheduleService;
 	private final FareService fareService;
 	
-	// MS-Users Integration
-	private final UserAuthClient userAuthClient;
-
 	// ===============================
 	// DASHBOARD & STATISTICS
 	// ===============================
@@ -103,98 +97,6 @@ public class DistributionAdminDashboard {
 	}
 
 	// ===============================
-	// MS-USERS INTEGRATION
-	// ===============================
-
-	@GetMapping("/organization/{organizationId}/users")
-	@Operation(summary = "Get all users for organization from MS-Users")
-	public Mono<ResponseDto<List<MsUsersUserInfo>>> getOrganizationUsers(@PathVariable String organizationId) {
-		log.debug("Fetching users for organization: {}", organizationId);
-
-		return userAuthClient.getUsersByOrganizationId(organizationId)
-				.collectList()
-				.map(users -> new ResponseDto<>(true, users))
-				.onErrorResume(e -> {
-					log.error("Error fetching users for organization {}: {}", organizationId, e.getMessage());
-					return Mono.just(new ResponseDto<>(false,
-							new ErrorMessage(500, "Error al obtener usuarios de la organización", e.getMessage())));
-				});
-	}
-
-	@GetMapping("/organization/{organizationId}/admins")
-	@Operation(summary = "Get administrators for organization from MS-Users")
-	public Mono<ResponseDto<List<MsUsersUserInfo>>> getOrganizationAdmins(@PathVariable String organizationId) {
-		log.debug("Fetching admins for organization: {}", organizationId);
-
-		return userAuthClient.getAdminsByOrganizationId(organizationId)
-				.collectList()
-				.map(admins -> new ResponseDto<>(true, admins))
-				.onErrorResume(e -> {
-					log.error("Error fetching admins for organization {}: {}", organizationId, e.getMessage());
-					return Mono.just(new ResponseDto<>(false,
-							new ErrorMessage(500, "Error al obtener administradores", e.getMessage())));
-				});
-	}
-
-	@GetMapping("/organization/{organizationId}/clients")
-	@Operation(summary = "Get clients for organization from MS-Users")
-	public Mono<ResponseDto<List<MsUsersUserInfo>>> getOrganizationClients(@PathVariable String organizationId) {
-		log.debug("Fetching clients for organization: {}", organizationId);
-
-		return userAuthClient.getClientsByOrganizationId(organizationId)
-				.collectList()
-				.map(clients -> new ResponseDto<>(true, clients))
-				.onErrorResume(e -> {
-					log.error("Error fetching clients for organization {}: {}", organizationId, e.getMessage());
-					return Mono.just(new ResponseDto<>(false,
-							new ErrorMessage(500, "Error al obtener clientes", e.getMessage())));
-				});
-	}
-
-	@GetMapping("/user/{userId}")
-	@Operation(summary = "Get user details by ID from MS-Users")
-	public Mono<ResponseDto<MsUsersUserInfo>> getUserDetails(@PathVariable String userId) {
-		log.debug("Fetching user details: {}", userId);
-
-		return userAuthClient.getUserById(userId)
-				.map(user -> new ResponseDto<>(true, user))
-				.switchIfEmpty(Mono.just(new ResponseDto<>(false,
-						new ErrorMessage(404, "Usuario no encontrado", "User not found with ID: " + userId))))
-				.onErrorResume(e -> {
-					log.error("Error fetching user {}: {}", userId, e.getMessage());
-					return Mono.just(new ResponseDto<>(false,
-							new ErrorMessage(500, "Error al obtener detalles del usuario", e.getMessage())));
-				});
-	}
-
-	@GetMapping("/organization/{organizationId}/user-summary")
-	@Operation(summary = "Get user summary for organization")
-	public Mono<ResponseDto<Map<String, Object>>> getOrganizationUserSummary(@PathVariable String organizationId) {
-		log.debug("Fetching user summary for organization: {}", organizationId);
-
-		return Mono.zip(
-				userAuthClient.getUsersByOrganizationId(organizationId).count(),
-				userAuthClient.getAdminsByOrganizationId(organizationId).count(),
-				userAuthClient.getClientsByOrganizationId(organizationId).count()
-		)
-		.map(tuple -> {
-			Map<String, Object> userSummary = Map.of(
-					"organizationId", organizationId,
-					"totalUsers", tuple.getT1(),
-					"totalAdmins", tuple.getT2(),
-					"totalClients", tuple.getT3(),
-					"lastUpdated", LocalDateTime.now()
-			);
-			return new ResponseDto<>(true, userSummary);
-		})
-		.onErrorResume(e -> {
-			log.error("Error fetching user summary for organization {}: {}", organizationId, e.getMessage());
-			return Mono.just(new ResponseDto<>(false,
-					new ErrorMessage(500, "Error al obtener resumen de usuarios", e.getMessage())));
-		});
-	}
-
-	// ===============================
 	// QUICK ACCESS TO DISTRIBUTION MODULES
 	// ===============================
 
@@ -260,7 +162,7 @@ public class DistributionAdminDashboard {
 				fareService.getAllF().hasElements()
 		)
 		.map(tuple -> {
-			boolean allHealthy = tuple.getT1() || tuple.getT2() || tuple.getT3() || tuple.getT4();
+			boolean allHealthy = tuple.getT1() && tuple.getT2() && tuple.getT3() && tuple.getT4();
 			
 			Map<String, Object> health = Map.of(
 					"status", allHealthy ? "HEALTHY" : "NEEDS_SETUP",
@@ -290,26 +192,13 @@ public class DistributionAdminDashboard {
 	public Mono<ResponseDto<Map<String, Object>>> getMsUsersHealth() {
 		log.debug("Checking MS-Users connectivity");
 
-		// Test connectivity by trying to get users for a test organization
-		return userAuthClient.validateUserByEmail("test@example.com")
-				.map(isValid -> {
-					Map<String, Object> health = Map.of(
-							"status", "CONNECTED",
-							"service", "MS-Users",
-							"timestamp", LocalDateTime.now(),
-							"note", "Service is responding"
-					);
-					return new ResponseDto<>(true, health);
-				})
-				.onErrorResume(e -> {
-					log.warn("MS-Users connectivity issue: {}", e.getMessage());
-					Map<String, Object> health = Map.of(
-							"status", "CONNECTION_ISSUE",
-							"service", "MS-Users", 
-							"error", e.getMessage(),
-							"timestamp", LocalDateTime.now()
-					);
-					return Mono.just(new ResponseDto<>(false, health));
-				});
+		// Return a placeholder response since MS-Users integration is not available
+		Map<String, Object> health = Map.of(
+				"status", "NOT_IMPLEMENTED",
+				"service", "MS-Users",
+				"timestamp", LocalDateTime.now(),
+				"note", "MS-Users integration not available"
+		);
+		return Mono.just(new ResponseDto<>(true, health));
 	}
 }

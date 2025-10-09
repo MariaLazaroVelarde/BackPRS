@@ -11,10 +11,8 @@ import pe.edu.vallegrande.vgmsdistribution.domain.enums.Constants;
 import pe.edu.vallegrande.vgmsdistribution.infrastructure.dto.request.FareCreateRequest;
 import pe.edu.vallegrande.vgmsdistribution.infrastructure.dto.response.FareResponse;
 import pe.edu.vallegrande.vgmsdistribution.infrastructure.dto.response.EnrichedFareResponse;
-import pe.edu.vallegrande.vgmsdistribution.infrastructure.dto.response.OrganizationResponse;
 import pe.edu.vallegrande.vgmsdistribution.infrastructure.exception.CustomException;
 import pe.edu.vallegrande.vgmsdistribution.infrastructure.repository.FareRepository;
-import pe.edu.vallegrande.vgmsdistribution.infrastructure.adapter.out.UserAuthClient;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -26,9 +24,6 @@ public class FareServiceImpl implements FareService {
 
     @Autowired
     private FareRepository fareRepository;
-    
-    @Autowired
-    private UserAuthClient userAuthClient;
 
     @Override
     public Flux<Fare> getAllF() {
@@ -210,29 +205,29 @@ public class FareServiceImpl implements FareService {
                         HttpStatus.NOT_FOUND.value(),
                         "Fare not found",
                         "The requested fare with id " + id + " was not found")))
-                .flatMap(this::toEnrichedResponse);
+                .map(this::toEnrichedResponse);
     }
     
     @Override
     public Flux<EnrichedFareResponse> getAllEnriched() {
         return fareRepository.findAll()
-                .flatMap(this::toEnrichedResponse);
+                .map(this::toEnrichedResponse);
     }
     
     @Override
     public Flux<EnrichedFareResponse> getAllActiveEnriched() {
         return fareRepository.findAllByStatus(Constants.ACTIVE.name())
-                .flatMap(this::toEnrichedResponse);
+                .map(this::toEnrichedResponse);
     }
     
     @Override
     public Flux<EnrichedFareResponse> getAllInactiveEnriched() {
         return fareRepository.findAllByStatus(Constants.INACTIVE.name())
-                .flatMap(this::toEnrichedResponse);
+                .map(this::toEnrichedResponse);
     }
     
-    private Mono<EnrichedFareResponse> toEnrichedResponse(Fare fare) {
-        EnrichedFareResponse.EnrichedFareResponseBuilder builder = EnrichedFareResponse.builder()
+    private EnrichedFareResponse toEnrichedResponse(Fare fare) {
+        return EnrichedFareResponse.builder()
                 .id(fare.getId())
                 .organizationId(fare.getOrganizationId())
                 .fareCode(fare.getFareCode())
@@ -240,35 +235,8 @@ public class FareServiceImpl implements FareService {
                 .fareType(fare.getFareType())
                 .fareAmount(fare.getFareAmount())
                 .status(fare.getStatus())
-                .createdAt(fare.getCreatedAt());
-        
-        // Fetch organization details if organizationId is present
-        if (fare.getOrganizationId() != null && !fare.getOrganizationId().isEmpty()) {
-            return userAuthClient.getOrganizationById(fare.getOrganizationId())
-                    .map(orgResponse -> {
-                        builder.organization(orgResponse);
-                        return builder.build();
-                    })
-                    .onErrorResume(e -> {
-                        log.warn("Failed to fetch organization details for ID {}: {}", fare.getOrganizationId(), e.getMessage());
-                        // Return response with basic organization info
-                        OrganizationResponse orgResponse = OrganizationResponse.builder()
-                                .organizationId(fare.getOrganizationId())
-                                .build();
-                        builder.organization(orgResponse);
-                        return Mono.just(builder.build());
-                    })
-                    .switchIfEmpty(Mono.fromSupplier(() -> {
-                        // Return response with basic organization info if no organization found
-                        OrganizationResponse orgResponse = OrganizationResponse.builder()
-                                .organizationId(fare.getOrganizationId())
-                                .build();
-                        builder.organization(orgResponse);
-                        return builder.build();
-                    }));
-        }
-        
-        return Mono.just(builder.build());
+                .createdAt(fare.getCreatedAt())
+                .build();
     }
     
     /**

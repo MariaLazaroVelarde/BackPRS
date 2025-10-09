@@ -19,8 +19,7 @@ public class JwtConfig  {
             try {
                 return ReactiveJwtDecoders.fromIssuerLocation(issuerUri)
                         .decode(token)
-                        .toFuture()
-                        .get();
+                        .block(); // Usar block() en lugar de toFuture().get()
             } catch (Exception e) {
                 throw new RuntimeException("Error decoding JWT token", e);
             }

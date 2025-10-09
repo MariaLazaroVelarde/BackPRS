@@ -8,9 +8,7 @@ import pe.edu.vallegrande.vgmsdistribution.domain.models.DistributionProgram;
 import pe.edu.vallegrande.vgmsdistribution.infrastructure.dto.request.DistributionProgramCreateRequest;
 import pe.edu.vallegrande.vgmsdistribution.infrastructure.dto.response.DistributionProgramResponse;
 import pe.edu.vallegrande.vgmsdistribution.infrastructure.dto.response.EnrichedDistributionProgramResponse;
-import pe.edu.vallegrande.vgmsdistribution.infrastructure.dto.response.OrganizationResponse;
 import pe.edu.vallegrande.vgmsdistribution.infrastructure.repository.DistributionProgramRepository;
-import pe.edu.vallegrande.vgmsdistribution.infrastructure.adapter.out.UserAuthClient;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -22,7 +20,6 @@ import java.time.Instant;
 public class DistributionProgramServiceImpl implements DistributionProgramService {
 
     private final DistributionProgramRepository repository;
-    private final UserAuthClient userAuthClient;
 
     @Override
     public Flux<DistributionProgramResponse> getAll() {
@@ -130,13 +127,13 @@ public class DistributionProgramServiceImpl implements DistributionProgramServic
     @Override
     public Mono<EnrichedDistributionProgramResponse> getEnrichedById(String id) {
         return repository.findById(id)
-                .flatMap(this::toEnrichedResponse);
+                .map(this::toEnrichedResponse);
     }
     
     @Override
     public Flux<EnrichedDistributionProgramResponse> getAllEnriched() {
         return repository.findAll()
-                .flatMap(this::toEnrichedResponse);
+                .map(this::toEnrichedResponse);
     }
     
     @Override
@@ -158,11 +155,11 @@ public class DistributionProgramServiceImpl implements DistributionProgramServic
                 .build();
 
         return repository.save(program)
-                .flatMap(this::toEnrichedResponse);
+                .map(this::toEnrichedResponse);
     }
     
-    private Mono<EnrichedDistributionProgramResponse> toEnrichedResponse(DistributionProgram program) {
-        EnrichedDistributionProgramResponse.EnrichedDistributionProgramResponseBuilder builder = EnrichedDistributionProgramResponse.builder()
+    private EnrichedDistributionProgramResponse toEnrichedResponse(DistributionProgram program) {
+        return EnrichedDistributionProgramResponse.builder()
                 .id(program.getId())
                 .organizationId(program.getOrganizationId())
                 .programCode(program.getProgramCode())
@@ -178,34 +175,7 @@ public class DistributionProgramServiceImpl implements DistributionProgramServic
                 .status(program.getStatus())
                 .responsibleUserId(program.getResponsibleUserId())
                 .observations(program.getObservations())
-                .createdAt(program.getCreatedAt());
-        
-        // Fetch organization details if organizationId is present
-        if (program.getOrganizationId() != null && !program.getOrganizationId().isEmpty()) {
-            return userAuthClient.getOrganizationById(program.getOrganizationId())
-                    .map(orgResponse -> {
-                        builder.organization(orgResponse);
-                        return builder.build();
-                    })
-                    .onErrorResume(e -> {
-                        log.warn("Failed to fetch organization details for ID {}: {}", program.getOrganizationId(), e.getMessage());
-                        // Return response with basic organization info
-                        OrganizationResponse orgResponse = OrganizationResponse.builder()
-                                .organizationId(program.getOrganizationId())
-                                .build();
-                        builder.organization(orgResponse);
-                        return Mono.just(builder.build());
-                    })
-                    .switchIfEmpty(Mono.fromSupplier(() -> {
-                        // Return response with basic organization info if no organization found
-                        OrganizationResponse orgResponse = OrganizationResponse.builder()
-                                .organizationId(program.getOrganizationId())
-                                .build();
-                        builder.organization(orgResponse);
-                        return builder.build();
-                    }));
-        }
-        
-        return Mono.just(builder.build());
+                .createdAt(program.getCreatedAt())
+                .build();
     }
 }
