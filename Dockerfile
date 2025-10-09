@@ -1,24 +1,37 @@
-# Multi-stage build para optimizar el tamaño
-FROM eclipse-temurin:17-jdk AS builder
+# Build and Runtime stage
+FROM maven:3.8.7-eclipse-temurin-17 AS builder
+WORKDIR /build
+
+# Cache dependencies
+COPY pom.xml .
+RUN mvn dependency:go-offline -B
+
+# Build with minimal memory usage
+COPY src ./src
+RUN mvn clean package -DskipTests -B -Dmaven.test.skip=true -Dspring.profiles.active=prod
+
+# Runtime stage
+FROM eclipse-temurin:17.0.7_7-jre-alpine
 WORKDIR /app
-COPY . .
-RUN ./mvnw clean package -DskipTests
 
-# Stage final con JRE más ligero
-FROM eclipse-temurin:17-jre-alpine
-WORKDIR /app
-COPY --from=builder /app/target/vg-ms-distribution-0.0.1-SNAPSHOT.jar app.jar
+COPY --from=builder /build/target/*.jar app.jar
 
-# Configuraciones para optimizar el contenedor
-ENV JAVA_OPTS="-Xms512m -Xmx1024m -XX:+UseG1GC -XX:+UseContainerSupport"
+# More appropriate JVM settings for Spring Boot application
+ENV JAVA_OPTS="\
+-Xms64m \
+-Xmx256m \
+-XX:MaxMetaspaceSize=128m \
+-XX:CompressedClassSpaceSize=32m \
+-Xss512k \
+-XX:MaxDirectMemorySize=32m \
+-XX:+UseG1GC \
+-XX:MaxGCPauseMillis=200 \
+-XX:+UnlockExperimentalVMOptions \
+-XX:+DisableExplicitGC \
+-Djava.awt.headless=true \
+-XX:TieredStopAtLevel=1"
 
-# Configurar la URL del microservicio de organización (puedes sobrescribirla en docker run)
-ENV microservices.organization.url=http://host.docker.internal:8081/api/organization
+EXPOSE 8085
 
-# Usuario no-root para seguridad
-RUN addgroup -g 1001 -S appgroup && \
-    adduser -u 1001 -S appuser -G appgroup
-USER appuser
-
-EXPOSE 8086
-ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar app.jar"]
+# Un solo CMD usando JSON syntax
+CMD ["sh", "-c", "exec java $JAVA_OPTS -jar app.jar"]
